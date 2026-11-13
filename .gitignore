@@ -13,3 +13,8 @@ web/dist/
 .artifacts/
 **/__pycache__/
 *.py[cod]
+
+# Local launcher artifacts
+.tools/
+.run/
+.omo/
