@@ -1,5 +1,7 @@
 package com.techflag.workdsh.admin;
 
+import java.util.Arrays;
+
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -18,7 +20,9 @@ public class AuthController {
     public AuthController(AuthService auth, org.springframework.jdbc.core.JdbcTemplate db, @Value("${workdsh.web.origin:http://127.0.0.1:18891}") String webOrigin) {
         this.auth = auth;
         this.db = db;
-        this.secureCookie = webOrigin.startsWith("https://");
+        this.secureCookie = Arrays.stream(webOrigin.split("\\s*,\\s*"))
+                .filter(origin -> !origin.isBlank())
+                .allMatch(origin -> origin.startsWith("https://"));
     }
 
     public record Credentials(@NotBlank @Size(max=254) String email, @NotBlank @Size(max=512) String password) {}

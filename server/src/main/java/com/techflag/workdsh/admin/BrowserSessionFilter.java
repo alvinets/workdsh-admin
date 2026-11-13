@@ -1,6 +1,7 @@
 package com.techflag.workdsh.admin;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.LinkedHashSet;
@@ -20,10 +21,12 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Component
 public class BrowserSessionFilter extends OncePerRequestFilter {
     public static final String COOKIE_NAME = "workdsh-admin-session";
-    private final String webOrigin;
+    private final Set<String> webOrigins;
 
+    /** Accepts one origin or a comma-separated allowlist (localhost, Tailscale IP, MagicDNS). */
     public BrowserSessionFilter(@Value("${workdsh.web.origin:http://127.0.0.1:18891}") String webOrigin) {
-        this.webOrigin = webOrigin;
+        this.webOrigins = Collections.unmodifiableSet(
+                new LinkedHashSet<>(Arrays.asList(webOrigin.split("\\s*,\\s*"))));
     }
 
     @Override
@@ -41,7 +44,7 @@ public class BrowserSessionFilter extends OncePerRequestFilter {
         if (browserLogin || token != null) {
             String site = request.getHeader("Sec-Fetch-Site");
             if ("cross-site".equals(site)) { response.sendError(403); return; }
-            if (!isRead(request.getMethod()) && !webOrigin.equals(request.getHeader("Origin"))) {
+            if (!isRead(request.getMethod()) && !webOrigins.contains(request.getHeader("Origin"))) {
                 response.sendError(403); return;
             }
         }
