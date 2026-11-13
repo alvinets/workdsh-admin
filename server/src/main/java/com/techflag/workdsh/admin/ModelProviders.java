@@ -34,7 +34,7 @@ public class ModelProviders {
   Set<String> providerIds=new HashSet<>(),modelIds=new HashSet<>();List<Provider> next=new ArrayList<>();
   for(var p:update.providers){
    if(p==null||p.id==null||!p.id.matches("[a-z][a-z0-9_-]{0,63}")||!providerIds.add(p.id)||p.displayName==null||p.displayName.isBlank()||p.displayName.length()>128||!List.of("openai-completions","anthropic-messages").contains(p.protocol)||p.models==null||p.models.size()>64)bad("Invalid provider fields");
-   try{URI u=URI.create(p.baseUrl);if(!"https".equals(u.getScheme())||u.getHost()==null||u.getUserInfo()!=null||u.getQuery()!=null||u.getFragment()!=null||p.baseUrl.length()>1024)bad("HTTPS provider URL required");}catch(Exception e){bad("HTTPS provider URL required");}
+   try{URI u=URI.create(p.baseUrl);if(!secureTransport(u)||u.getHost()==null||u.getUserInfo()!=null||u.getQuery()!=null||u.getFragment()!=null||p.baseUrl.length()>1024)bad("HTTPS provider URL required (HTTP is allowed only for private or loopback hosts)");}catch(Exception e){bad("HTTPS provider URL required (HTTP is allowed only for private or loopback hosts)");}
    Set<String> own=new HashSet<>();for(var m:p.models){if(m==null||m.id==null||!m.id.matches("[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}")||!own.add(m.id)||m.displayName==null||m.displayName.length()>128||!validLimit(m.contextWindow)||!validLimit(m.maxOutputTokens)||m.contextWindow!=null&&m.maxOutputTokens!=null&&m.maxOutputTokens>m.contextWindow)bad("Invalid model fields");if(p.enabled&&!modelIds.add(m.id))bad("Enabled interfaces must use different model IDs");}
    String encrypted=current.providers.stream().filter(old->old.id.equals(p.id)).map(Provider::apiKey).findFirst().orElse("");
    if(p.apiKey!=null&&!p.apiKey.isEmpty()){if(p.apiKey.length()>8192||p.apiKey.chars().anyMatch(Character::isISOControl))bad("Invalid API key");encrypted=secrets.cryptOrganizationModel(true,org,p.apiKey);}
@@ -43,6 +43,28 @@ public class ModelProviders {
   }
   try{String payload=json.writeValueAsString(next);if(current.revision==0)db.update("insert into organization_model_providers(organization_id,revision,providers_json) values(?,1,?)",org,payload);else if(db.update("update organization_model_providers set revision=?,providers_json=? where organization_id=? and revision=?",current.revision+1,payload,org,current.revision)!=1)throw new ResponseStatusException(HttpStatus.CONFLICT);}catch(ResponseStatusException e){throw e;}catch(Exception e){throw new IllegalStateException("Cannot save providers",e);}
   audit.audit(actor,"organization.model.providers.updated",org);return read(actor);
+ }
+ private static boolean secureTransport(URI u){
+  if("https".equals(u.getScheme()))return true;
+  if(!"http".equals(u.getScheme()))return false;
+  String host=u.getHost();
+  if(host==null)return false;
+  if(host.startsWith("[")&&host.endsWith("]"))host=host.substring(1,host.length()-1);
+  host=host.toLowerCase(java.util.Locale.ROOT);
+  if(host.equals("localhost"))return true;
+  if(host.contains(":")){
+   return host.equals("::1")||host.equals("0:0:0:0:0:0:0:1")||host.startsWith("fc")||host.startsWith("fd")||host.startsWith("fe80:");
+  }
+  String[] parts=host.split("\\.");
+  if(parts.length!=4)return false;
+  int[] octets=new int[4];
+  for(int i=0;i<4;i++){
+   if(!parts[i].matches("\\d{1,3}"))return false;
+   octets[i]=Integer.parseInt(parts[i]);
+   if(octets[i]>255)return false;
+  }
+  int a=octets[0],b=octets[1];
+  return a==10||a==127||(a==172&&b>=16&&b<=31)||(a==192&&b==168)||(a==169&&b==254)||(a==100&&b>=64&&b<=127);
  }
  private static boolean validLimit(Long value){return value==null||value>0&&value<=100000000;}
  private static void bad(String message){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,message);}
